@@ -34,8 +34,8 @@ class SignedController(Controller):
             log.exception("Exception attempting to load service: %s", request.headers['X-Service'])
             raise HTTPBadRequest("Unknown or invalid service identity.")
         
-        if request.service.exempt_encryption:
-            log.debug("Request exempt from encryption, skipping validation")
+        if request.service.ecdsa_exempt:
+            log.debug("Request exempt from ECDSA, skipping validation")
             # Check that the remote IP Address matches the one we have for this application
             # Try to maintain some kind of security...
             if request.service.exempt_address and request.remote_addr != request.service.exempt_address:
@@ -76,7 +76,7 @@ class SignedController(Controller):
                     resp = response
             )
             
-        if request.service.exempt_encryption:
+        if request.service.ecdsa_exempt:
             log.debug("Canonical data:\n%r", canon)
         
             del response.date  # TODO: This works around an odd bug of sending two Date header values.

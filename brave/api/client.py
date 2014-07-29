@@ -40,12 +40,12 @@ def bunchify(data, name=None):
 
 
 class SignedAuth(AuthBase):
-    def __init__(self, identity, private, public, encryption_exempt=False):
+    def __init__(self, identity, private, public, ecdsa_exempt=False):
         self.identity = identity
         self.private = private
         self.public = public
-        self.encryption_exempt = encryption_exempt
-    
+        self.ecdsa_exempt = ecdsa_exempt
+        
     def __call__(self, request):
         request.headers['Date'] = Response(date=datetime.utcnow()).headers['Date']
         request.headers['X-Service'] = self.identity
@@ -56,8 +56,7 @@ class SignedAuth(AuthBase):
         canon = "{r.headers[date]}\n{r.url}\n{r.body}".format(r=request).\
                 encode('utf-8')
         log.debug("Canonical request:\n\n\"{0}\"".format(canon))
-        log.info("HELLO {0}".format(self.encryption_exempt))
-        if not self.encryption_exempt:
+        if not self.ecdsa_exempt:
             request.headers['X-Signature'] = hexlify(self.private.sign(canon))
         
         request.register_hook('response', self.validate)
@@ -73,7 +72,7 @@ class SignedAuth(AuthBase):
         canon = "{ident}\n{r.headers[Date]}\n{r.url}\n{r.text}".format(ident=self.identity, r=response)
         log.debug("Canonical data:\n%r", canon)
         
-        if self.encryption_exempt:
+        if self.ecdsa_exempt:
             log.info("Encryption exempt: skipping validation")
             return
         
@@ -86,14 +85,14 @@ class SignedAuth(AuthBase):
 
 
 class API(object):
-    __slots__ = ('endpoint', 'identity', 'private', 'public', 'pool', 'encryption_exempt')
+    __slots__ = ('endpoint', 'identity', 'private', 'public', 'pool', 'ecdsa_exempt')
     
-    def __init__(self, endpoint, identity, private, public, pool=None, encryption_exempt=False):
+    def __init__(self, endpoint, identity, private, public, pool=None, ecdsa_exempt=False):
         self.endpoint = unistr(endpoint)
         self.identity = identity
         self.private = private
         self.public = public
-        self.encryption_exempt = encryption_exempt
+        self.ecdsa_exempt = ecdsa_exempt
         
         if not pool:
             self.pool = requests.Session()
@@ -107,14 +106,14 @@ class API(object):
                 self.private,
                 self.public,
                 self.pool,
-                self.encryption_exempt
+                self.ecdsa_exempt
             )
     
     def __call__(self, *args, **kwargs):
         result = self.pool.post(
                 self.endpoint + ( ('/' + '/'.join(unistr(arg) for arg in args)) if args else '' ),
                 data = kwargs,
-                auth = SignedAuth(self.identity, self.private, self.public, self.encryption_exempt)
+                auth = SignedAuth(self.identity, self.private, self.public, self.ecdsa_exempt)
             )
         
         if not result.status_code == requests.codes.ok:
