@@ -24,7 +24,11 @@ class SignedController(Controller):
     def __before__(self, *args, **kw):
         """Validate the request signature, load the relevant data."""
         
-        if 'X-Service' not in request.headers or 'X-Signature' not in request.headers:
+        log.info(args)
+        log.info(kw)
+        log.info(request.headers['X-Service'])
+        
+        if 'X-Service' not in request.headers:
             log.error("Digitally signed request missing headers.")
             raise HTTPBadRequest("Missing headers.")
         
@@ -33,6 +37,16 @@ class SignedController(Controller):
         except:
             log.exception("Exception attempting to load service: %s", request.headers['X-Service'])
             raise HTTPBadRequest("Unknown or invalid service identity.")
+        
+        if request.service.exempt_encryption:
+            log.debug("Request exempt from encryption, skipping validation")
+            log.info(dir(request))
+            log.debug("Canonical request:\n\n\"{r.headers[Date]}\n{r.url}\n{r.body}\"".format(r=request))
+            return args, kw
+        
+        if 'X-Signature' not in request.headers:
+            log.error("Digitally signed request missing headers.")
+            raise HTTPBadRequest("Missing headers.")
         
         hex_key = request.service.key.public.encode('utf-8')
         key = VerifyingKey.from_string(unhexlify(hex_key), curve=NIST256p, hashfunc=sha256)
@@ -49,8 +63,6 @@ class SignedController(Controller):
     def __after__(self, result, *args, **kw):
         """Generate the JSON response and sign."""
         
-        key = SigningKey.from_string(unhexlify(request.service.key.private), curve=NIST256p, hashfunc=sha256)
-        
         response = Response(status=200, charset='utf-8')
         response.date = datetime.utcnow()
         response.last_modified = result.pop('updated', None)
@@ -63,8 +75,18 @@ class SignedController(Controller):
                     req = request,
                     resp = response
             )
+            
+        if request.service.exempt_encryption:
+            log.debug("Canonical data:\n%r", canon)
+        
+            del response.date  # TODO: This works around an odd bug of sending two Date header values.
+        
+            return response
+        
+        key = SigningKey.from_string(unhexlify(request.service.key.private), curve=NIST256p, hashfunc=sha256)
         response.headers[b'X-Signature'] = hexlify(key.sign(canon))
         log.debug("Signing response: %s", response.headers[b'X-Signature'])
+        
         log.debug("Canonical data:\n%r", canon)
         
         del response.date  # TODO: This works around an odd bug of sending two Date header values.
