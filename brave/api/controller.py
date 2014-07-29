@@ -24,10 +24,6 @@ class SignedController(Controller):
     def __before__(self, *args, **kw):
         """Validate the request signature, load the relevant data."""
         
-        log.info(args)
-        log.info(kw)
-        log.info(request.headers['X-Service'])
-        
         if 'X-Service' not in request.headers:
             log.error("Digitally signed request missing headers.")
             raise HTTPBadRequest("Missing headers.")
@@ -40,7 +36,11 @@ class SignedController(Controller):
         
         if request.service.exempt_encryption:
             log.debug("Request exempt from encryption, skipping validation")
-            log.info(dir(request))
+            # Check that the remote IP Address matches the one we have for this application
+            # Try to maintain some kind of security...
+            if request.service.exempt_address and request.remote_addr != request.service.exempt_address:
+                log.info("Received incorrect request from IP: {0}".format(request.remote_addr))
+                raise HTTPBadRequest("Incorrect IP Address.")
             log.debug("Canonical request:\n\n\"{r.headers[Date]}\n{r.url}\n{r.body}\"".format(r=request))
             return args, kw
         
